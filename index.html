@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>GlobalLib Navigator Free</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      /* Custom scrollbar for that old library feel */
+      ::-webkit-scrollbar {
+        width: 10px;
+      }
+      ::-webkit-scrollbar-track {
+        background: #3e2723; 
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #8d6e63; 
+        border-radius: 5px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #a1887f; 
+      }
+      .wood-texture {
+        background-color: #3e2723;
+        background-image: url("https://www.transparenttextures.com/patterns/wood-pattern.png");
+        /* Fallback gradient if image fails */
+        background: linear-gradient(to bottom right, #2c1a12, #4e342e);
+      }
+      .book-glow {
+        box-shadow: 0 0 15px 2px rgba(251, 191, 36, 0.4);
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react-dom/": "https://aistudiocdn.com/react-dom@^19.2.0/",
+    "@google/genai": "https://aistudiocdn.com/@google/genai@^1.30.0",
+    "react/": "https://aistudiocdn.com/react@^19.2.0/",
+    "react": "https://aistudiocdn.com/react@^19.2.0"
+  }
+}
+</script>
+</head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

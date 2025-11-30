@@ -1,0 +1,8 @@
+{
+  "name": "GlobalLib Navigator Free",
+  "description": "Keyless AI search for books in major libraries with directions and real-time availability.",
+  "requestFramePermissions": [
+    "microphone",
+    "geolocation"
+  ]
+}
