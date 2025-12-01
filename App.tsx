@@ -24,7 +24,7 @@ interface SearchCache {
 }
 
 // Fallback map key from prompt instructions
-const MAP_KEY = "AIzaSyBFw0Qbyq9zTFTd-tUYmKX8g7x4oBrd0tg";
+const MAP_KEY = "AIzaSyBKjQyne1QMdWLK0qoZb49jaq8DHHTF3XY";
 
 const App: React.FC = () => {
   const [query, setQuery] = useState('');
@@ -37,6 +37,10 @@ const App: React.FC = () => {
   const [location, setLocation] = useState<string>('Major Libraries (Global)');
   const [voiceListening, setVoiceListening] = useState(false);
   const [groundingUrls, setGroundingUrls] = useState<{title: string, uri: string}[]>([]);
+  
+  // Shelf Visualization State
+  const [shelfImages, setShelfImages] = useState<{[key: number]: string}>({});
+  const [loadingShelfIndex, setLoadingShelfIndex] = useState<number | null>(null);
 
   // Refs for voice recognition
   const recognitionRef = useRef<any>(null);
@@ -45,9 +49,6 @@ const App: React.FC = () => {
   useEffect(() => {
     if ('geolocation' in navigator) {
       navigator.geolocation.getCurrentPosition(async (position) => {
-        // Reverse geocode is complex without key, we'll just store coordinates context if needed
-        // For now, we default to user's general IP region or the prompt default
-        // We can pass the lat/long to Gemini tool config if we wanted strict local grounding
         setLocation(`${position.coords.latitude}, ${position.coords.longitude}`);
       }, () => {
         console.log("Geolocation denied or unavailable, using default.");
@@ -102,6 +103,7 @@ const App: React.FC = () => {
     setError('');
     setSelectedBook(null);
     setHoldings([]);
+    setShelfImages({});
     
     // Check Cache
     const cachedResults = checkCache(searchQuery);
@@ -135,10 +137,12 @@ const App: React.FC = () => {
     setHoldingsLoading(true);
     setHoldings([]);
     setGroundingUrls([]);
+    setShelfImages({});
     try {
       const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
       
       // 3. Gemini with Google Search Grounding for Real-time Availability
+      // Updated prompt to ask for specific indoor directions (Floor/Room)
       const prompt = `Find physical library holdings for the book "${book.title}" by ${book.author_name?.[0] || 'Unknown'}. 
       Prioritize major libraries like NYPL, British Library, Library of Congress, or major public libraries near ${location}.
       
@@ -147,7 +151,7 @@ const App: React.FC = () => {
       - "address" (Full street address)
       - "callNumber" (Specific shelf location/Call Number, e.g., 'J F ROWLING', 'LCCN 2020')
       - "availability" (e.g., 'Available', 'Reference Only', 'Checked Out')
-      - "directions" (Textual walking directions from the main entrance to the specific stack/floor/shelf)
+      - "directions" (Specific INDOOR walking directions. Mention the Floor, Room, or Section name if known. e.g. "3rd Floor, Rose Reading Room, Aisle 4")
       - "website" (URL to reserve or view catalog if found)
       
       Strictly output JSON only in a code block. Limit to top 3 relevant libraries.`;
@@ -179,13 +183,10 @@ const App: React.FC = () => {
         if (jsonMatch[1]) {
            parsedHoldings = JSON.parse(jsonMatch[1]);
         } else {
-           // Fallback if model just returns the array without markdown
            parsedHoldings = JSON.parse(text);
         }
       } catch (e) {
         console.error("Failed to parse GenAI response", e);
-        // Fallback mock if parsing completely fails but we have text, 
-        // normally we would try to extract via regex, but for demo:
         setError("Could not parse library data. Try again.");
       }
 
@@ -195,6 +196,39 @@ const App: React.FC = () => {
       setError("Could not retrieve real-time holdings. Please try again.");
     } finally {
       setHoldingsLoading(false);
+    }
+  };
+
+  // Generate a visual guide for the shelf
+  const generateShelfView = async (library: string, callNumber: string, index: number) => {
+    if (shelfImages[index] || loadingShelfIndex !== null) return;
+    setLoadingShelfIndex(index);
+    try {
+      const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+      const prompt = `A photorealistic wide shot of a library aisle inside ${library}. 
+      The view focuses on a specific bookshelf containing books with call number "${callNumber}". 
+      The scene should show the interior of this specific library (e.g. if NYPL, show classical architecture; if modern, show metal shelves).
+      Highlight or focus on the middle shelf where the book would be. 
+      Warm library lighting, academic atmosphere. No text overlay.`;
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-2.5-flash-image',
+        contents: {
+          parts: [{ text: prompt }]
+        }
+      });
+
+      for (const part of response.candidates?.[0]?.content?.parts || []) {
+        if (part.inlineData) {
+          const base64String = part.inlineData.data;
+          const mimeType = part.inlineData.mimeType || 'image/png';
+          setShelfImages(prev => ({...prev, [index]: `data:${mimeType};base64,${base64String}`}));
+        }
+      }
+    } catch (e) {
+      console.error("Failed to generate shelf image", e);
+    } finally {
+      setLoadingShelfIndex(null);
     }
   };
 
@@ -372,28 +406,57 @@ const App: React.FC = () => {
                                 <span className="block text-stone-500 text-xs uppercase">Call Number</span>
                                 <span className="font-mono text-amber-400">{lib.callNumber || 'N/A'}</span>
                               </div>
-                              <div className="bg-stone-950 p-2 rounded border border-stone-800">
-                                <span className="block text-stone-500 text-xs uppercase">Shelf Location</span>
-                                <span className="text-stone-300">See Directions</span>
+                              <div className="bg-stone-950 p-2 rounded border border-stone-800 cursor-help" title={lib.directions}>
+                                <span className="block text-stone-500 text-xs uppercase">Location</span>
+                                <span className="text-stone-300 truncate">{lib.directions.split(',')[0]}...</span>
                               </div>
                             </div>
 
                             <div className="mb-4">
-                              <span className="block text-stone-500 text-xs uppercase mb-1">Walking Directions</span>
+                              <span className="block text-stone-500 text-xs uppercase mb-1">Indoor Directions</span>
                               <p className="text-sm text-amber-100/80 italic border-l-2 border-amber-600 pl-3">
                                 "{lib.directions}"
                               </p>
                             </div>
 
-                            {lib.website && (
-                               <a href={lib.website} target="_blank" rel="noreferrer" className="text-xs text-amber-500 hover:text-amber-300 underline">
-                                 Reserve / Library Website
-                               </a>
+                            <div className="flex items-center gap-3">
+                              {lib.website && (
+                                <a href={lib.website} target="_blank" rel="noreferrer" className="text-xs px-3 py-1 bg-stone-800 border border-stone-600 rounded text-amber-500 hover:text-amber-300">
+                                  Library Catalog
+                                </a>
+                              )}
+                              
+                              {/* Shelf Visualizer Button */}
+                              <button 
+                                onClick={() => generateShelfView(lib.library, lib.callNumber, idx)}
+                                disabled={loadingShelfIndex !== null || !!shelfImages[idx]}
+                                className="text-xs px-3 py-1 bg-amber-900/50 border border-amber-700 rounded text-amber-200 hover:bg-amber-800/50 disabled:opacity-50 flex items-center gap-1 transition-colors"
+                              >
+                                {shelfImages[idx] ? 'Visualized' : loadingShelfIndex === idx ? 'Generating...' : '👁️ View Shelf Guide'}
+                              </button>
+                            </div>
+
+                            {/* Generated Shelf Image */}
+                            {shelfImages[idx] && (
+                              <div className="mt-4 animate-fade-in relative group">
+                                <div className="text-[10px] text-stone-400 uppercase mb-1 flex justify-between">
+                                  <span>AI Generated Shelf Location</span>
+                                  <span className="text-amber-600">Prediction</span>
+                                </div>
+                                <div className="rounded overflow-hidden border border-amber-500/30 relative">
+                                  <img src={shelfImages[idx]} alt="AI Generated Shelf View" className="w-full h-48 object-cover hover:scale-105 transition-transform duration-700" />
+                                  <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent pointer-events-none"></div>
+                                  <div className="absolute bottom-2 left-2 text-white text-xs drop-shadow-md">
+                                    📍 Aim for Call Number: <span className="font-mono font-bold text-amber-400">{lib.callNumber}</span>
+                                  </div>
+                                </div>
+                              </div>
                             )}
+
                          </div>
 
                          {/* Map Column */}
-                         <div className="md:w-64 h-48 md:h-auto bg-stone-800 relative border-t md:border-t-0 md:border-l border-stone-700">
+                         <div className="md:w-64 h-48 md:h-auto bg-stone-800 relative border-t md:border-t-0 md:border-l border-stone-700 flex-shrink-0">
                            <iframe
                              width="100%"
                              height="100%"
@@ -403,7 +466,7 @@ const App: React.FC = () => {
                              allowFullScreen
                            ></iframe>
                            <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-[10px] text-white p-1 text-center backdrop-blur-sm">
-                             Static Embed
+                             Exterior Map
                            </div>
                          </div>
                       </div>
